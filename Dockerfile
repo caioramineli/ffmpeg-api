@@ -8,7 +8,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
-RUN npm run build        # ← adicione esta linha
+RUN npm run build
 
 EXPOSE 3001
 
