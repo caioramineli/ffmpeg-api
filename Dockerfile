@@ -1,13 +1,14 @@
-FROM ubuntu:22.04
+FROM node:20-alpine
 
-RUN apt-get update && \
-    apt-get install -y ffmpeg nodejs npm curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
+
 COPY package*.json ./
 RUN npm install
+
 COPY . .
 
-CMD ["node", "server.js"]
+EXPOSE 3001
+
+CMD ["node", "dist/server.js"]
