@@ -20,25 +20,34 @@ app.get('/health', (_req, res) => {
  *   - video: arquivo de vídeo
  *   - filename: nome original do arquivo (opcional)
  */
-app.post('/compress', upload.single('video'), async (req, res) => {
+app.post('/compress', upload.any(), async (req, res) => {
+  console.log('bateu aqui');
+  
   try {
-    if (!req.file) {
+    const file = req.file ?? (req.files as Express.Multer.File[])?.[0];
+    if (!file) {
       res.status(400).json({ error: 'Nenhum arquivo enviado.' });
       return;
     }
 
-    const filename = (req.body.filename as string) || req.file.originalname || 'video.mp4';
+    const filename = (req.body.filename as string) || file.originalname || 'video.mp4';
     const bucket = process.env.R2_BUCKET_NAME!;
 
-    console.log(`[ffmpeg-service] Recebido: ${filename} (${req.file.size} bytes)`);
+    console.log(`[ffmpeg-service] Recebido: ${filename} (${file.size} bytes)`);
 
-    const key = await compressAndUpload(req.file.buffer, filename, bucket);
+    const result = await compressAndUpload(file.buffer, filename, bucket);
 
-    const publicUrl = process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/${key}` : undefined;
+    const publicUrl = process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/${result.key}` : undefined;
 
-    console.log(`[ffmpeg-service] Concluído: ${key}`);
+    console.log(`[ffmpeg-service] Concluído: ${result.key}`);
 
-    res.json({ key, url: publicUrl });
+    res.json({
+      key: result.key,
+      url: publicUrl,
+      originalSize: result.originalSize,
+      compressedSize: result.compressedSize,
+      reductionPercent: result.reductionPercent,
+    });
   } catch (err) {
     console.error('[ffmpeg-service] Erro:', err);
     res.status(500).json({ error: 'Falha ao comprimir ou fazer upload do vídeo.' });
