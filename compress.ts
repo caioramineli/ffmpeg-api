@@ -29,7 +29,8 @@ export type CompressionResult = {
 export async function compressAndUpload(
   inputBuffer: Buffer,
   originalFilename: string,
-  bucket: string
+  bucket: string,
+  options?: { webhookUrl?: string; mediaId?: number; networkId?: number }
 ): Promise<CompressionResult> {
   const tmpDir = os.tmpdir();
   const uid = uuidv4();
@@ -43,7 +44,7 @@ export async function compressAndUpload(
   try {
     // Comprime com FFmpeg
     const duration = await getDuration(inputPath);
-    await runFFmpeg(inputPath, outputPath, duration);
+    await runFFmpeg(inputPath, outputPath, duration, options);
 
     // Lê o arquivo comprimido
     const compressedBuffer = fs.readFileSync(outputPath);
@@ -94,13 +95,20 @@ function timemarkToSeconds(timemark: string): number {
   return parseInt(h) * 3600 + parseInt(m) * 60 + parseFloat(s);
 }
 
-function runFFmpeg(inputPath: string, outputPath: string, totalDuration: number): Promise<void> {
+function runFFmpeg(
+  inputPath: string, 
+  outputPath: string, 
+  totalDuration: number,
+  options?: { webhookUrl?: string; mediaId?: number; networkId?: number }
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    let lastReportedTime = 0;
+
     ffmpeg(inputPath)
       .outputOptions([
         '-c:v libx264',       // Codec H.264 — melhor compressão/compatibilidade
         '-crf 28',            // Qualidade: 18=alta qualidade, 28=boa compressão, 35+=baixa
-        '-preset fast',       // Velocidade de encoding (ultrafast/fast/medium/slow)
+        '-preset ultrafast',  // Otimizado para menor uso de CPU pelo servidor (mais rápido)
         '-c:a aac',           // Codec de áudio
         '-b:a 128k',          // Bitrate do áudio
         '-movflags +faststart', // Permite streaming antes do download completo
@@ -111,8 +119,27 @@ function runFFmpeg(inputPath: string, outputPath: string, totalDuration: number)
       .on('progress', (p) => {
         if (p.timemark && totalDuration > 0) {
           const current = timemarkToSeconds(p.timemark);
-          const percent = Math.min((current / totalDuration) * 100, 100).toFixed(1);
-          process.stdout.write(`\r[ffmpeg] Progresso: ${percent}%   `);
+          
+          // Throttling: Enviar atualização pelo menos a cada 1 segundo (evita spamar o webhook com chamadas)
+          const now = Date.now();
+          if (now - lastReportedTime >= 1000 || current >= totalDuration * 0.99) {
+            const percent = Math.min((current / totalDuration) * 100, 100).toFixed(1);
+            process.stdout.write(`\r[ffmpeg] Progresso: ${percent}%   `);
+            
+            if (options?.webhookUrl && options?.mediaId) {
+              fetch(options.webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  mediaId: options.mediaId,
+                  networkId: options.networkId,
+                  progress: Number(percent)
+                })
+              }).catch(() => {}); // Fire and forget silencioso
+            }
+
+            lastReportedTime = now;
+          }
         }
       })
       .on('end', () => { process.stdout.write('\n'); resolve(); })

@@ -32,10 +32,14 @@ app.post('/compress', upload.any(), async (req, res) => {
 
     const filename = (req.body.filename as string) || file.originalname || 'video.mp4';
     const bucket = process.env.R2_BUCKET_NAME!;
+    
+    const webhookUrl = req.body.webhookUrl as string | undefined;
+    const mediaId = req.body.mediaId ? parseInt(req.body.mediaId as string, 10) : undefined;
+    const networkId = req.body.networkId ? parseInt(req.body.networkId as string, 10) : undefined;
 
     console.log(`[ffmpeg-service] Recebido: ${filename} (${file.size} bytes)`);
 
-    const result = await compressAndUpload(file.buffer, filename, bucket);
+    const result = await compressAndUpload(file.buffer, filename, bucket, { webhookUrl, mediaId, networkId });
 
     const publicUrl = process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/${result.key}` : undefined;
 
